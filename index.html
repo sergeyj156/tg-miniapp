@@ -8,9 +8,9 @@
   <style>
     body { font-family: Arial, sans-serif; padding: 16px; }
     label { display:block; margin-top: 12px; }
-    input { width: 100%; padding: 10px; font-size: 16px; }
+    input { width: 100%; padding: 10px; font-size: 16px; box-sizing: border-box; }
     button { width:100%; padding: 12px; margin-top: 16px; font-size: 16px; }
-    .hint { color:#666; font-size: 12px; }
+    .hint { color:#666; font-size: 12px; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -40,28 +40,55 @@
   <button id="send">Отправить</button>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
+    const tg = window.Telegram?.WebApp;
+    if (tg) tg.ready();
+
+    // ВАЖНО: вставьте сюда актуальный URL из Apps Script (Веб-приложение → URL), обязательно /exec
+    const APPS_SCRIPT_URL = "PASTE_YOUR_WEBAPP_EXEC_URL_HERE";
 
     function getTgId() {
-      // Надёжнее всего: initDataUnsafe.user.id
       return tg?.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : "";
     }
 
     function normalizePhone(phone) {
-      let p = phone.replace(/[^\d+]/g, "");
+      let p = (phone || "").replace(/[^\d+]/g, "");
       if (p.startsWith("8") && p.length === 11) p = "+7" + p.slice(1);
       if (p.startsWith("7") && p.length === 11) p = "+7" + p.slice(1);
       if (!p.startsWith("+")) p = "+" + p;
       return p;
     }
 
-    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzRkA2Bq-JAiEQEYS9HR_r2M81nUVIyIn1kC3CqKcRl6GogfIYkW18mjwbABCOay7uUiQ/exec";
+    function validate(payload) {
+      if (!payload.first_name) return "Заполни имя.";
+      if (!payload.phone) return "Заполни телефон.";
+      if (!payload.phone.startsWith("+7") || payload.phone.replace(/[^\d]/g, "").length !== 11) {
+        return "Телефон должен быть в формате +7XXXXXXXXXX";
+      }
+      return "";
+    }
 
+    async function postData(url, payload) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      // Иногда Apps Script/прокси возвращает не JSON — покажем текст
+      const text = await res.text();
+
+      let json = null;
+      try { json = JSON.parse(text); } catch (_) {}
+
+      return { status: res.status, ok: res.ok, text, json };
+    }
 
     document.getElementById("send").addEventListener("click", async () => {
       const tg_id = getTgId();
-      if (!tg_id) { alert("Не удалось получить TG ID. Открой миниапп из Telegram."); return; }
+      if (!tg_id) {
+        alert("Не удалось получить TG ID. Открой миниапп из Telegram (не из браузера).");
+        return;
+      }
 
       const payload = {
         tg_id,
@@ -72,26 +99,33 @@
         class: document.getElementById("class").value.trim(),
       };
 
-      // Простая проверка
-      if (!payload.first_name || !payload.phone) { alert("Заполни имя и телефон."); return; }
-      if (!payload.phone.startsWith("+7") || payload.phone.length < 12) { alert("Телефон должен быть в формате +7XXXXXXXXXX"); return; }
+      const err = validate(payload);
+      if (err) { alert(err); return; }
+
+      // МАЯЧОК: покажет, какой URL реально используется (для проверки кеша)
+      alert("Отправляю на:\n" + APPS_SCRIPT_URL);
 
       try {
-        const res = await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error || "Ошибка отправки");
+        const result = await postData(APPS_SCRIPT_URL, payload);
 
-        alert("Готово! Данные сохранены.");
-        tg.close();
+        // Если сервер вернул JSON и ok=true
+        if (result.json && result.json.ok) {
+          alert("Готово! Данные сохранены.");
+          if (tg) tg.close();
+          return;
+        }
+
+        // Иначе покажем максимально понятную диагностику
+        const details =
+          "HTTP: " + result.status + "\n\n" +
+          "JSON: " + (result.json ? JSON.stringify(result.json) : "нет (ответ не JSON)") + "\n\n" +
+          "TEXT:\n" + result.text;
+
+        alert("Ошибка отправки.\n\n" + details);
       } catch (e) {
-        alert("Ошибка: " + e.message);
+        alert("Ошибка (fetch): " + (e?.message || String(e)));
       }
     });
   </script>
 </body>
 </html>
-
