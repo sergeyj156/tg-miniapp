@@ -1,1 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Анкета</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    label { display:block; margin-top: 12px; }
+    input { width: 100%; padding: 10px; font-size: 16px; }
+    button { width:100%; padding: 12px; margin-top: 16px; font-size: 16px; }
+    .hint { color:#666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h2>Заполни данные</h2>
+
+  <label>Имя
+    <input id="first_name" placeholder="Иван" />
+  </label>
+
+  <label>Фамилия
+    <input id="last_name" placeholder="Иванов" />
+  </label>
+
+  <label>Телефон (+7…)
+    <input id="phone" placeholder="+79990001122" />
+    <div class="hint">Формат: +79990001122</div>
+  </label>
+
+  <label>Город
+    <input id="city" placeholder="Москва" />
+  </label>
+
+  <label>Класс
+    <input id="class" placeholder="10" />
+  </label>
+
+  <button id="send">Отправить</button>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+
+    function getTgId() {
+      // Надёжнее всего: initDataUnsafe.user.id
+      return tg?.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : "";
+    }
+
+    function normalizePhone(phone) {
+      let p = phone.replace(/[^\d+]/g, "");
+      if (p.startsWith("8") && p.length === 11) p = "+7" + p.slice(1);
+      if (p.startsWith("7") && p.length === 11) p = "+7" + p.slice(1);
+      if (!p.startsWith("+")) p = "+" + p;
+      return p;
+    }
+
+    const APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEBAPP_URL_HERE";
+
+    document.getElementById("send").addEventListener("click", async () => {
+      const tg_id = getTgId();
+      if (!tg_id) { alert("Не удалось получить TG ID. Открой миниапп из Telegram."); return; }
+
+      const payload = {
+        tg_id,
+        first_name: document.getElementById("first_name").value.trim(),
+        last_name: document.getElementById("last_name").value.trim(),
+        phone: normalizePhone(document.getElementById("phone").value.trim()),
+        city: document.getElementById("city").value.trim(),
+        class: document.getElementById("class").value.trim(),
+      };
+
+      // Простая проверка
+      if (!payload.first_name || !payload.phone) { alert("Заполни имя и телефон."); return; }
+      if (!payload.phone.startsWith("+7") || payload.phone.length < 12) { alert("Телефон должен быть в формате +7XXXXXXXXXX"); return; }
+
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Ошибка отправки");
+
+        alert("Готово! Данные сохранены.");
+        tg.close();
+      } catch (e) {
+        alert("Ошибка: " + e.message);
+      }
+    });
+  </script>
+</body>
+</html>
 
